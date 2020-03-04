@@ -1,11 +1,43 @@
 import struct
 
+# if (test) { consequence } else { alternative }
+#
+# ('block', [
+#     ('block', [
+#         test
+#         ('br_if', 0),  # Goto 0,
+#         alternative,
+#         ('br', 1),  # Goto 1
+#     ]),  # Label : 0
+#     consequence,
+# ])  # Label : 1
+
+# while (test) { body }
+#
+# ('block', [
+#     ('loop', [  # Label : 0
+#         not test,
+#         ('br_if', 1)  # Goto 1
+#         body,
+#         ('br', 0)  # Goto 0
+#     ])
+# ])  # Label : 1
+
 
 class Function:
     def __init__(self, nparams, returns, code):
         self.nparams = nparams
         self.returns = returns
         self.code = code
+
+
+class Break(Exception):
+    def __init__(self, level):
+        self.level = level
+
+
+class Return(Exception):
+    pass
 
 
 class Machine:
@@ -28,10 +60,13 @@ class Machine:
 
     def call(self, func, *args):
         locals = dict(enumerate(args))
-        self.execute(func.code, locals)
+        try:
+            self.execute(func.code, locals)
+        except Return:
+            pass
         if func.returns:
             return self.pop()
-        
+
     def execute(self, instructions, locals):
         for op, *args in instructions:
             print(op, args, self.items)
@@ -41,6 +76,18 @@ class Machine:
                 right = self.pop()
                 left = self.pop()
                 self.push(left + right)
+            elif op == 'sub':
+                right = self.pop()
+                left = self.pop()
+                self.push(left - right)
+            elif op == 'le':
+                right = self.pop()
+                left = self.pop()
+                self.push(left <= right)
+            elif op == 'ge':
+                right = self.pop()
+                left = self.pop()
+                self.push(left >= right)
             elif op == 'mul':
                 right = self.pop()
                 left = self.pop()
@@ -62,6 +109,29 @@ class Machine:
                 result = self.call(func, *fargs)
                 if func.returns:
                     self.push(result)
+            elif op == 'br':
+                raise Break(args[0])
+            elif op == 'br_if':
+                if self.pop():
+                    raise Break(args[0])
+            elif op == 'block':
+                try:
+                    self.execute(args[0], locals)
+                except Break as b:
+                    if b.level > 0:
+                        b.level -= 1
+                        raise
+            elif op == 'loop':
+                while True:
+                    try:
+                        self.execute(args[0], locals)
+                        break
+                    except Break as b:
+                        if b.level > 0:
+                            b.level -= 1
+                            raise
+            elif op == 'return':
+                raise Return()
             else:
                 raise RuntimeError(f'Bad op {op}')
 
@@ -80,21 +150,47 @@ def example():
     x_addr = 0
     v_addr = 8
 
-    code = [
-        ('const', x_addr),
-        ('const', x_addr),
-        ('load',),
-        ('const', v_addr),
-        ('load',),
-        ('const', 0.1),
-        ('call', 0),
-        ('store',)
-    ]
-
     m = Machine(functions)
     m.store(x_addr, 2.0)
     m.store(v_addr, 3.0)
-    m.execute(code, None)
+
+    m.execute([
+        ('block', [
+            ('loop', [
+                ('const', x_addr),
+                ('load',),
+                ('const', 0),
+                ('le',),
+                ('br_if', 1),
+                ('const', x_addr),
+                ('const', x_addr),
+                ('load',),
+                ('const', v_addr),
+                ('load',),
+                ('const', 0.1),
+                ('call', 0),
+                ('store',),
+                ('block', [
+                    ('block', [
+                        ('const', x_addr),
+                        ('load',),
+                        ('const', 70),
+                        ('ge',),
+                        ('br_if', 0),
+                        ('br', 1),
+                    ]),
+                    ('const', v_addr),
+                    ('const', v_addr),
+                    ('load',),
+                    ('const', -1),
+                    ('mul',),
+                    ('store',),
+                ]),
+                ('br', 0)
+            ])
+        ])
+    ], None)
+
     print('Result:', m.load(x_addr))
 
 
