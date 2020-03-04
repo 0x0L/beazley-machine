@@ -31,6 +31,13 @@ class Function:
         self.code = code
 
 
+class ImportFunction:
+    def __init__(self, nparams, returns, call):
+        self.nparams = nparams
+        self.returns = returns
+        self.call = call
+
+
 class Break(Exception):
     def __init__(self, level):
         self.level = level
@@ -60,16 +67,19 @@ class Machine:
 
     def call(self, func, *args):
         locals = dict(enumerate(args))
-        try:
-            self.execute(func.code, locals)
-        except Return:
-            pass
-        if func.returns:
-            return self.pop()
+        if isinstance(func, Function):
+            try:
+                self.execute(func.code, locals)
+            except Return:
+                pass
+            if func.returns:
+                return self.pop()
+        else:
+            return func.call(*args)
 
     def execute(self, instructions, locals):
         for op, *args in instructions:
-            print(op, args, self.items)
+            # print(op, args, self.items)
             if op == 'const':
                 self.push(args[0])
             elif op == 'add':
@@ -137,6 +147,14 @@ class Machine:
 
 
 def example():
+    def py_display_player(x):
+        import time
+        c = int(x)
+        print(' ' * c + '<0:>' + ' ' * (76 - c), end='\r')
+        time.sleep(0.01)
+
+    display_player = ImportFunction(1, False, py_display_player)
+
     update_position = Function(nparams=3, returns=True, code=[
         ('local.get', 0),
         ('local.get', 1),
@@ -145,7 +163,7 @@ def example():
         ('add',),
     ])
 
-    functions = [update_position]
+    functions = [update_position, display_player]
 
     x_addr = 0
     v_addr = 8
@@ -157,6 +175,9 @@ def example():
     m.execute([
         ('block', [
             ('loop', [
+                ('const', x_addr),
+                ('load',),
+                ('call', 1),
                 ('const', x_addr),
                 ('load',),
                 ('const', 0),
